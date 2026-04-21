@@ -1,0 +1,27 @@
+{
+    "name": "adsniper/symfony-messenger-bridge",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "Adsniper\\SymfonyMessengerBridge\\": "src/"
+        }
+    },
+	"require": {
+		"php": ">=8.1",
+		"symfony/messenger": "^5.4 || ^6.0 || ^7.0",
+		"symfony/cache": "^5.4 || ^6.0 || ^7.0",
+		"symfony/event-dispatcher": "^5.4 || ^6.0 || ^7.0",
+		"symfony/cache-contracts": "^2.5 || ^3.0",
+		"symfony/event-dispatcher-contracts": "^2.5 || ^3.0",
+		"guzzlehttp/guzzle": "^7.0",
+		"psr/http-client": "^1.0",
+		"psr/container": "^1.1 || ^2.0",
+		"haydenpierce/class-finder": "^0.5.3"
+	},
+    "require-dev": {
+        "phpstan/phpstan": "^2.1"
+    },
+    "scripts": {
+        "lint": "phpstan analyse src/"
+    }
+}
