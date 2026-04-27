@@ -4,7 +4,9 @@ namespace Adsniper\SymfonyMessengerBridge\Tests;
 
 use Adsniper\SymfonyMessengerBridge\ArrayContainer;
 use Adsniper\SymfonyMessengerBridge\AutodiscoveryHandlersLocatorFactory;
+use Adsniper\SymfonyMessengerBridge\HandlerMap;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use Symfony\Component\Cache\Adapter\NullAdapter;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Envelope;
@@ -110,6 +112,47 @@ final class AutodiscoveryHandlersLocatorFactoryTest extends TestCase
         $locator = $factory->createHandlersLocator();
 
         $this->assertHandlerDiscovered($locator, CustomMethodHandler::class, 'process');
+    }
+
+    public function testFactoryIsSerializableAndUnserializable(): void
+    {
+        $container = new ArrayContainer([
+            ClassLevelHandler::class => new ClassLevelHandler(),
+        ]);
+
+        $factory = new AutodiscoveryHandlersLocatorFactory($container, $this->cache, [ClassLevelHandler::class]);
+
+        $serialized = serialize($factory);
+        $unserialized = unserialize($serialized);
+
+        $this->assertInstanceOf(AutodiscoveryHandlersLocatorFactory::class, $unserialized);
+    }
+
+    public function testHandlerMapIsSerializableAndUnserializable(): void
+    {
+        $container = new ArrayContainer([
+            ClassLevelHandler::class => new ClassLevelHandler(),
+        ]);
+
+        $factory = new AutodiscoveryHandlersLocatorFactory($container, $this->cache, [ClassLevelHandler::class]);
+        $factory->createHandlersLocator();
+
+        $reflection = new ReflectionClass(AutodiscoveryHandlersLocatorFactory::class);
+        $mapProperty = $reflection->getProperty('map');
+        $mapProperty->setAccessible(true);
+
+        $map = $mapProperty->getValue($factory);
+        $this->assertNotNull($map);
+
+        $serialized = serialize($map);
+        $unserialized = unserialize($serialized);
+
+        $this->assertInstanceOf(HandlerMap::class, $unserialized);
+        $unserialized->setContainer($container);
+
+        $handlers = $unserialized->getMap();
+        $this->assertArrayHasKey(TestMessage::class, $handlers);
+        $this->assertNotEmpty($handlers[TestMessage::class]);
     }
 
     private function assertHandlerDiscovered(HandlersLocatorInterface $locator, string $handlerClass, string $methodName): void

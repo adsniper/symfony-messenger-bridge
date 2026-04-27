@@ -130,10 +130,7 @@ final class AutodiscoveryHandlersLocatorFactory
 
 		$map->addHandler(
 			$messageClass,
-			[
-				$this->container->get($target->getDeclaringClass()->getName()),
-				$target->getName()
-			],
+			[$target->getDeclaringClass()->getName(), $target->getName()],
 			$args[0] ?? $args["bus"] ?? null
 		);
 	}
@@ -155,7 +152,7 @@ class HandlerMap
 		return $this;
 	}
 
-	public function addHandler(string $message, callable $handler, ?string $bus): self
+	public function addHandler(string $message, callable|array $handler, ?string $bus): self
 	{
 		if (!isset($this->handlers[$message])) {
 			$this->handlers[$message] = [];
@@ -189,6 +186,11 @@ class HandlerMap
 			foreach ($handlers as $handler) {
 				if ($handler instanceof CallableObject) {
 					$resolved[$message][] = $handler->toCallable($this->container);
+					continue;
+				}
+
+				if (is_array($handler)) {
+					$resolved[$message][] = [$this->container->get($handler[0]), $handler[1]];
 					continue;
 				}
 
