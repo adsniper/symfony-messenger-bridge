@@ -3,6 +3,7 @@
 namespace Adsniper\SymfonyMessengerBridge;
 
 use Exception;
+use LogicException;
 use Psr\Container\ContainerInterface;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -55,6 +56,8 @@ final class AutodiscoveryHandlersLocatorFactory
 				}
 			);
 		}
+
+		$this->map->setContainer($this->container);
 
 		return $this->map;
 	}
@@ -174,7 +177,26 @@ class HandlerMap
 
 	public function getMap(): array
 	{
-		return $this->handlers;
+		if ($this->container === null) {
+			throw new LogicException("No container set");
+		}
+
+		$resolved = [];
+
+		foreach ($this->handlers as $message => $handlers) {
+			$resolved[$message] = [];
+
+			foreach ($handlers as $handler) {
+				if ($handler instanceof CallableObject) {
+					$resolved[$message][] = $handler->toCallable($this->container);
+					continue;
+				}
+
+				$resolved[$message][] = $handler;
+			}
+		}
+
+		return $resolved;
 	}
 
 	public function getSenders(): array
@@ -213,13 +235,7 @@ class HandlerMap
 		$res = $data["handlers"];
 
 		foreach ($res as $message => $handlers) {
-			$this->handlers[$message] = [];
-
-			foreach ($handlers as $callableObj) {
-				assert($callableObj instanceof CallableObject);
-
-				$this->handlers[$message][] = $callableObj->toCallable($this->container);
-			}
+			$this->handlers[$message] = $handlers;
 		}
 
 		$this->senders = $data["senders"];

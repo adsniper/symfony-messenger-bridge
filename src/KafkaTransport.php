@@ -131,7 +131,7 @@ final class KafkaTransport implements TransportInterface
 
 		try {
 			$this->createConsumerInstance();
-		} catch (Throwable $ex) {
+		} catch (Exception $ex) {
 			return;
 		}
 	}
