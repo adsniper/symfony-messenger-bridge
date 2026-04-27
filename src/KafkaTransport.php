@@ -189,7 +189,7 @@ final class KafkaTransport implements TransportInterface
 					[
 						'topic' => $this->getTopic(),
 						'partition' => $pos->partition,
-						'offset' => $pos,
+						'offset' => $pos->offset,
 					]
 				]
 			],
