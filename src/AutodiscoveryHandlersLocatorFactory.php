@@ -1,15 +1,12 @@
-<?php
+<?php declare(strict_types=1);
 
 namespace Adsniper\SymfonyMessengerBridge;
 
 use Exception;
-use LogicException;
 use Psr\Container\ContainerInterface;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
-use Serializable;
-use stdClass;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
@@ -64,7 +61,7 @@ final class AutodiscoveryHandlersLocatorFactory
 
 	private function discoverAndBuild(): HandlerMap
 	{
-		$map = new HandlerMap($this->container);
+		$map = new HandlerMap();
 
 		foreach ($this->targetClasses as $class) {
 			$class = new ReflectionClass($class);
@@ -139,7 +136,7 @@ final class AutodiscoveryHandlersLocatorFactory
 	}
 }
 
-class HandlerMap implements Serializable
+class HandlerMap
 {
 	/** @var array<class-string, callable[]> */
 	private array $handlers = [];
@@ -147,9 +144,12 @@ class HandlerMap implements Serializable
 	/** @var array<class-string,> */
 	private array $senders = [];
 
-	public function __construct(
-		private ContainerInterface $container
-	) {
+	private ?ContainerInterface $container = null;
+
+	public function setContainer(ContainerInterface $container): self
+	{
+		$this->container = $container;
+		return $this;
 	}
 
 	public function addHandler(string $message, callable $handler, ?string $bus): self
@@ -182,7 +182,7 @@ class HandlerMap implements Serializable
 		return $this->senders;
 	}
 
-	public function serialize(): ?string
+	public function __serialize(): array
 	{
 		$res = [];
 
@@ -195,7 +195,6 @@ class HandlerMap implements Serializable
 					assert(array_is_list($handler));
 					
 					$res[$message][] = new ArrayCallable(
-						$this->container,
 						$handler[0],
 						$handler[1] ?? null
 					);
@@ -206,19 +205,20 @@ class HandlerMap implements Serializable
 			}
 		}
 
-		return serialize(["handlers" => $res, "senders" => $this->senders]);
+		return ["handlers" => $res, "senders" => $this->senders];
 	}
 
-	public function unserialize(string $data): void
+	public function __unserialize(array $data): void
 	{
-		$data = unserialize($data);
 		$res = $data["handlers"];
 
 		foreach ($res as $message => $handlers) {
 			$this->handlers[$message] = [];
 
 			foreach ($handlers as $callableObj) {
-				$this->handlers[$message][] = $callableObj->toCallable();
+				assert($callableObj instanceof CallableObject);
+
+				$this->handlers[$message][] = $callableObj->toCallable($this->container);
 			}
 		}
 
@@ -226,44 +226,27 @@ class HandlerMap implements Serializable
 	}
 }
 
+/**
+ * @internal
+ */
 interface CallableObject
 {
-	public function toCallable(): callable;
+	public function toCallable(ContainerInterface $container): callable;
 }
 
-readonly class ArrayCallable implements CallableObject, Serializable
+/**
+ * @internal
+ */
+class ArrayCallable implements CallableObject
 {
 	public function __construct(
-		private ContainerInterface $container,
-		public object $obj,
+		public string $class,
 		public ?string $method = null
 	) {
-		if ($this->obj instanceof stdClass) {
-			throw new LogicException("stdClass as handler is not supported");
-		}
-
-		assert(class_exists(get_class($this->obj)));
-
-		if ($this->method !== null) {
-			assert(method_exists($this->obj, $this->method));
-		}
 	}
 
-	public function toCallable(): callable
+	public function toCallable(ContainerInterface $classLocator): callable
 	{
-		return [$this->obj, $this->method];
-	}
-
-	public function serialize(): ?string
-	{
-		return serialize(["class" => get_class($this->obj), "method" => $this->method]);
-	}
-
-	public function unserialize(string $data): void
-	{
-		["class" => $class, "method" => $method] = unserialize($data);
-
-		$this->obj = $this->container->get($class);
-		$this->method = $method;
+		return [$classLocator->get($this->class), $this->method];
 	}
 }

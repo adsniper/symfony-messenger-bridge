@@ -4,6 +4,7 @@ namespace Adsniper\SymfonyMessengerBridge;
 
 use Exception;
 use LogicException;
+use PHPUnit\Event\Code\Throwable;
 use Psr\Http\Client\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
@@ -41,7 +42,6 @@ final class KafkaTransport implements TransportInterface
 	public function get(): iterable
 	{
 		$this->createConsumerInstance();
-		$this->subscribeToTopic();
 
 		$messages = $this->getRecords();
 
@@ -49,24 +49,33 @@ final class KafkaTransport implements TransportInterface
 			return [];
 		}
 
-		return array_map(
+		$envelopes = array_map(
 			function (array $message): Envelope {
-				$this->commit($message['partition'], $message['offset']);
 				$envelope = $this->serializer->decode($message["value"]);
-				return $envelope->with(new KafkaMessageKeyStamp($message["key"]));
+				return $envelope->with(
+					new KafkaMessageKeyStamp($message["key"]),
+					new KafkaMessagePositionStamp(
+						$message['partition'], $message['offset']
+					)
+				);
 			},
 			$messages
 		);
+
+		$this->prolongConsumerInstance();
+		return $envelopes;
 	}
 
 	public function ack(Envelope $envelope): void
 	{
-		return;
+		$this->prolongConsumerInstance();
+		$this->commit($envelope);
 	}
 
 	public function reject(Envelope $envelope): void
 	{
-		return;
+		$this->prolongConsumerInstance();
+		$this->commit($envelope);
 	}
 
 	public function __destruct()
@@ -111,8 +120,20 @@ final class KafkaTransport implements TransportInterface
 		);
 
 		$res = json_decode($data, true);
-
 		$this->consumerInstance = $res['instance_id'];
+
+		$this->subscribeToTopic();
+	}
+
+	private function prolongConsumerInstance(): void
+	{
+		$this->shouldSetConsumerInstance();
+
+		try {
+			$this->createConsumerInstance();
+		} catch (Throwable $ex) {
+			return;
+		}
 	}
 
 	private function subscribeToTopic(): void
@@ -154,9 +175,11 @@ final class KafkaTransport implements TransportInterface
 		return json_decode($response, true);
 	}
 
-	private function commit(string $partition, string $offset): void
+	private function commit(Envelope $envelope): void
 	{
 		$this->shouldSetConsumerInstance();
+
+		$pos = $envelope->last(KafkaMessagePositionStamp::class);
 
 		$this->client->exec(
 			'POST',
@@ -165,8 +188,8 @@ final class KafkaTransport implements TransportInterface
 				'offsets' => [
 					[
 						'topic' => $this->getTopic(),
-						'partition' => $partition,
-						'offset' => $offset,
+						'partition' => $pos->partition,
+						'offset' => $pos,
 					]
 				]
 			],
@@ -187,7 +210,7 @@ final class KafkaTransport implements TransportInterface
 			return;
 		}
 
-		$this->client->exec(
+		$this->client->execSilent(
 			'DELETE',
 			"/consumers/{$this->getGroup()}/instances/{$this->getConsumerInstance()}",
 			['Content-Type' => 'application/vnd.kafka.v2+json']
@@ -240,12 +263,15 @@ final class KafkaTransport implements TransportInterface
 			return $this->consumerInstance;
 		}
 
-		$consumerInstance = $this->config->consumerInstancePrefix;
-
-		if (!$consumerInstance) {
-			throw new LogicException('Consumer instance identifier not set');
+		if ($this->config->formatConsumerInstance !== null) {
+			$inst = $this->config
+				->formatConsumerInstance
+				->call($this, $this->config->consumerInstancePrefix);
+		} else {
+			$inst = $this->config->consumerInstancePrefix . "_" . uniqid();
 		}
 
-		return $consumerInstance . "_" . uniqid();
+		$this->consumerInstance = $inst;
+		return $inst;
 	}
 }
