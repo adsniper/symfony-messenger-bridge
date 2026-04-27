@@ -2,16 +2,17 @@
 
 namespace Adsniper\SymfonyMessengerBridge;
 
+use Composer\InstalledVersions;
 use Exception;
 use LogicException;
-use PHPUnit\Event\Code\Throwable;
 use Psr\Http\Client\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Transport\Receiver\KeepaliveReceiverInterface;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 use Symfony\Component\Messenger\Transport\TransportInterface;
 
-final class KafkaTransport implements TransportInterface
+final class KafkaTransport implements TransportInterface, KeepaliveReceiverInterface
 {
 	private QueueRestClient $client;
 
@@ -23,6 +24,14 @@ final class KafkaTransport implements TransportInterface
 		ClientInterface $client,
 		private SerializerInterface $serializer
 	) {
+		$messengerVersion = InstalledVersions::getVersion("symfony/messenger");
+
+		if (version_compare($messengerVersion, "7.2", "<")) {
+			throw new LogicException(
+				"KafkaTransport can only be used with symfony/messenger >= 7.2"
+			);
+		}
+
 		$this->client = (new QueueRestClient($client, [
 			"dev" => false,
 			"host" => $config->host
@@ -62,19 +71,21 @@ final class KafkaTransport implements TransportInterface
 			$messages
 		);
 
-		$this->prolongConsumerInstance();
 		return $envelopes;
+	}
+
+	public function keepalive(Envelope $envelope, ?int $seconds = null): void
+	{
+		$this->commit($envelope);
 	}
 
 	public function ack(Envelope $envelope): void
 	{
-		$this->prolongConsumerInstance();
 		$this->commit($envelope);
 	}
 
 	public function reject(Envelope $envelope): void
 	{
-		$this->prolongConsumerInstance();
 		$this->commit($envelope);
 	}
 
@@ -123,17 +134,6 @@ final class KafkaTransport implements TransportInterface
 		$this->consumerInstance = $res['instance_id'];
 
 		$this->subscribeToTopic();
-	}
-
-	private function prolongConsumerInstance(): void
-	{
-		$this->shouldSetConsumerInstance();
-
-		try {
-			$this->createConsumerInstance();
-		} catch (Exception $ex) {
-			return;
-		}
 	}
 
 	private function subscribeToTopic(): void
