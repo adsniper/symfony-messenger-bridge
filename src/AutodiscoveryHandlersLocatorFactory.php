@@ -8,6 +8,7 @@ use Psr\Container\ContainerInterface;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
+use Serializable;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
@@ -17,11 +18,33 @@ use Symfony\Component\Messenger\Transport\TransportInterface;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 
-final class AutodiscoveryHandlersLocatorFactory
+final class AutodiscoveryHandlersLocatorFactory implements Serializable
 {
 	private const CACHE_PREFIX = "message-bus-locator-factory-map";
 
 	private ?HandlerMap $map = null;
+
+	public function __serialize(): array
+	{
+		return [
+			'map' => $this->map,
+		];
+	}
+
+	public function __unserialize(array $data): void
+	{
+		$this->map = $data['map'];
+	}
+
+	public function serialize(): string
+	{
+		return serialize($this->__serialize());
+	}
+
+	public function unserialize(string $data): void
+	{
+		$this->__unserialize(unserialize($data));
+	}
 
 	/**
 	 * @param iterable<class-string> $targetClasses
@@ -136,7 +159,7 @@ final class AutodiscoveryHandlersLocatorFactory
 	}
 }
 
-class HandlerMap
+class HandlerMap implements Serializable
 {
 	/** @var array<class-string, callable[]> */
 	private array $handlers = [];
@@ -232,6 +255,16 @@ class HandlerMap
 		return ["handlers" => $res, "senders" => $this->senders];
 	}
 
+	public function serialize(): string
+	{
+		return serialize($this->__serialize());
+	}
+
+	public function unserialize(string $data): void
+	{
+		$this->__unserialize(unserialize($data));
+	}
+
 	public function __unserialize(array $data): void
 	{
 		$res = $data["handlers"];
@@ -255,12 +288,36 @@ interface CallableObject
 /**
  * @internal
  */
-class ArrayCallable implements CallableObject
+class ArrayCallable implements CallableObject, Serializable
 {
 	public function __construct(
 		public string $class,
 		public ?string $method = null
 	) {
+	}
+
+	public function __serialize(): array
+	{
+		return [
+			'class' => $this->class,
+			'method' => $this->method,
+		];
+	}
+
+	public function __unserialize(array $data): void
+	{
+		$this->class = $data['class'];
+		$this->method = $data['method'];
+	}
+
+	public function serialize(): string
+	{
+		return serialize($this->__serialize());
+	}
+
+	public function unserialize(string $data): void
+	{
+		$this->__unserialize(unserialize($data));
 	}
 
 	public function toCallable(ContainerInterface $classLocator): callable
