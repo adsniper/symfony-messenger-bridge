@@ -3,8 +3,12 @@
 Обёртка над Symfony Messenger, предоставляющая реализацию Kafka REST транспорта и автообнаружение обработчиков.
 
 ## Установка
+> [!WARNING]
+> KafkaTransport требует `symfony/messenger` >= 7.2. Но автодискавери работает и с более старыми версиями.
+
 ```bash
 composer require adsniper/symfony-messenger-bridge
+
 ```
 
 ## Использование

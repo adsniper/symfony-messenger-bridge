@@ -2,15 +2,17 @@
 
 namespace Adsniper\SymfonyMessengerBridge;
 
+use Composer\InstalledVersions;
 use Exception;
 use LogicException;
 use Psr\Http\Client\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Transport\Receiver\KeepaliveReceiverInterface;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 use Symfony\Component\Messenger\Transport\TransportInterface;
 
-final class KafkaTransport implements TransportInterface
+final class KafkaTransport implements TransportInterface, KeepaliveReceiverInterface
 {
 	private QueueRestClient $client;
 
@@ -22,6 +24,14 @@ final class KafkaTransport implements TransportInterface
 		ClientInterface $client,
 		private SerializerInterface $serializer
 	) {
+		$messengerVersion = InstalledVersions::getVersion("symfony/messenger");
+
+		if (version_compare($messengerVersion, "7.2", "<")) {
+			throw new LogicException(
+				"KafkaTransport can only be used with symfony/messenger >= 7.2"
+			);
+		}
+
 		$this->client = (new QueueRestClient($client, [
 			"dev" => false,
 			"host" => $config->host
@@ -41,7 +51,6 @@ final class KafkaTransport implements TransportInterface
 	public function get(): iterable
 	{
 		$this->createConsumerInstance();
-		$this->subscribeToTopic();
 
 		$messages = $this->getRecords();
 
@@ -49,24 +58,35 @@ final class KafkaTransport implements TransportInterface
 			return [];
 		}
 
-		return array_map(
+		$envelopes = array_map(
 			function (array $message): Envelope {
-				$this->commit($message['partition'], $message['offset']);
 				$envelope = $this->serializer->decode($message["value"]);
-				return $envelope->with(new KafkaMessageKeyStamp($message["key"]));
+				return $envelope->with(
+					new KafkaMessageKeyStamp($message["key"]),
+					new KafkaMessagePositionStamp(
+						$message['partition'], $message['offset']
+					)
+				);
 			},
 			$messages
 		);
+
+		return $envelopes;
+	}
+
+	public function keepalive(Envelope $envelope, ?int $seconds = null): void
+	{
+		$this->commit($envelope);
 	}
 
 	public function ack(Envelope $envelope): void
 	{
-		return;
+		$this->commit($envelope);
 	}
 
 	public function reject(Envelope $envelope): void
 	{
-		return;
+		$this->commit($envelope);
 	}
 
 	public function __destruct()
@@ -111,8 +131,9 @@ final class KafkaTransport implements TransportInterface
 		);
 
 		$res = json_decode($data, true);
-
 		$this->consumerInstance = $res['instance_id'];
+
+		$this->subscribeToTopic();
 	}
 
 	private function subscribeToTopic(): void
@@ -154,9 +175,11 @@ final class KafkaTransport implements TransportInterface
 		return json_decode($response, true);
 	}
 
-	private function commit(string $partition, string $offset): void
+	private function commit(Envelope $envelope): void
 	{
 		$this->shouldSetConsumerInstance();
+
+		$pos = $envelope->last(KafkaMessagePositionStamp::class);
 
 		$this->client->exec(
 			'POST',
@@ -165,8 +188,8 @@ final class KafkaTransport implements TransportInterface
 				'offsets' => [
 					[
 						'topic' => $this->getTopic(),
-						'partition' => $partition,
-						'offset' => $offset,
+						'partition' => $pos->partition,
+						'offset' => $pos->offset,
 					]
 				]
 			],
@@ -187,7 +210,7 @@ final class KafkaTransport implements TransportInterface
 			return;
 		}
 
-		$this->client->exec(
+		$this->client->execSilent(
 			'DELETE',
 			"/consumers/{$this->getGroup()}/instances/{$this->getConsumerInstance()}",
 			['Content-Type' => 'application/vnd.kafka.v2+json']
@@ -240,12 +263,15 @@ final class KafkaTransport implements TransportInterface
 			return $this->consumerInstance;
 		}
 
-		$consumerInstance = $this->config->consumerInstancePrefix;
-
-		if (!$consumerInstance) {
-			throw new LogicException('Consumer instance identifier not set');
+		if ($this->config->formatConsumerInstance !== null) {
+			$inst = $this->config
+				->formatConsumerInstance
+				->call($this, $this->config->consumerInstancePrefix);
+		} else {
+			$inst = $this->config->consumerInstancePrefix . "_" . uniqid();
 		}
 
-		return $consumerInstance . "_" . uniqid();
+		$this->consumerInstance = $inst;
+		return $inst;
 	}
 }

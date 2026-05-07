@@ -5,6 +5,9 @@ Wrapper around Symfony Messenger providing Kafka Rest transport implementation a
 [Русская версия](./README.ru.md)
 
 ## Installation
+> [!WARNING]
+> KafkaTransport requires `symfony/messenger` >= 7.2. The autodiscovery feature works fine with older versions.
+
 ```bash
 composer require adsniper/symfony-messenger-bridge
 ```
