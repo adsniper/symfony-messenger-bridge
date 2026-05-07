@@ -58,7 +58,7 @@ final class AutodiscoveryHandlersLocatorFactory implements Serializable
 
 	public function createHandlersLocator(): HandlersLocatorInterface
 	{
-		return new HandlersLocator($this->getMap()->getMap());
+		return new HandlersLocator($this->cacheHandlerMap()->getMap());
 	}
 
 	/**
@@ -66,10 +66,10 @@ final class AutodiscoveryHandlersLocatorFactory implements Serializable
 	 */
 	public function createSendersLocator(array $transports): SendersLocatorInterface
 	{
-		return new SendersLocator($this->getMap()->getSenders(), new ArrayContainer($transports));
+		return new SendersLocator($this->cacheHandlerMap()->getSenders(), new ArrayContainer($transports));
 	}
 
-	private function getMap(): HandlerMap
+	private function cacheHandlerMap(): HandlerMap
 	{
 		if ($this->map === null) {
 			$this->map = $this->cache->get(
@@ -204,24 +204,33 @@ class HandlerMap implements Serializable
 		$resolved = [];
 
 		foreach ($this->handlers as $message => $handlers) {
-			$resolved[$message] = [];
-
-			foreach ($handlers as $handler) {
-				if ($handler instanceof CallableObject) {
-					$resolved[$message][] = $handler->toCallable($this->container);
-					continue;
-				}
-
-				if (is_array($handler)) {
-					$resolved[$message][] = [$this->container->get($handler[0]), $handler[1]];
-					continue;
-				}
-
-				$resolved[$message][] = $handler;
-			}
+			$resolved[$message] = array_map([$this, "wrapCallable"], $handlers);
 		}
 
 		return $resolved;
+	}
+
+	private function wrapCallable(CallableObject|callable|array $handler): callable
+	{
+		if ($handler instanceof CallableObject) {
+			$handler = $handler->toCallable($this->container);
+		}
+
+		if (is_array($handler)) {
+			assert(count($handler) === 2);
+
+			if (is_object($handler[0])) {
+				$handler[0] = get_class($handler[0]);
+			}
+
+			return new LazyCaller(
+				$this->container,
+				$handler[0],
+				$handler[1]
+			);
+		}
+
+		throw new Exception("not implemented");
 	}
 
 	public function getSenders(): array
@@ -274,6 +283,27 @@ class HandlerMap implements Serializable
 		}
 
 		$this->senders = $data["senders"];
+	}
+}
+
+/**
+ * @internal
+ */
+class LazyCaller
+{
+	public function __construct(
+		private ContainerInterface $container,
+		private string $class,
+		private string $method = "__invoke"
+	) {
+	}
+
+	public function __invoke(mixed... $args)
+	{
+		call_user_func_array(
+			[$this->container->get($this->class), $this->method],
+			$args
+		);
 	}
 }
 

@@ -5,8 +5,11 @@ namespace Adsniper\SymfonyMessengerBridge\Tests;
 use Adsniper\SymfonyMessengerBridge\ArrayContainer;
 use Adsniper\SymfonyMessengerBridge\AutodiscoveryHandlersLocatorFactory;
 use Adsniper\SymfonyMessengerBridge\HandlerMap;
+use Adsniper\SymfonyMessengerBridge\LazyCaller;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionFunction;
+use ReflectionFunctionAbstract;
 use Symfony\Component\Cache\Adapter\NullAdapter;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Envelope;
@@ -161,8 +164,19 @@ final class AutodiscoveryHandlersLocatorFactoryTest extends TestCase
 
         $this->assertNotEmpty($handlers);
         $descriptor = array_values($handlers)[0];
-        $this->assertInstanceOf(HandlerDescriptor::class, $descriptor);
-        $this->assertSame($handlerClass . '::' . $methodName, $descriptor->getName());
+		$this->assertInstanceOf(HandlerDescriptor::class, $descriptor);
+
+		$closure = $descriptor->getHandler();
+		$reflection = new ReflectionFunction($closure);
+		$closureThis = $reflection->getClosureThis();
+		$this->assertInstanceOf(LazyCaller::class, $closureThis);
+
+		$callerReflection = new ReflectionClass($closureThis);
+		$callerClass = $callerReflection->getProperty("class")->getValue($closureThis);
+		$callerMethod = $callerReflection->getProperty("method")->getValue($closureThis);
+
+		$this->assertEquals($handlerClass, $callerClass);
+		$this->assertEquals($methodName, $callerMethod);
     }
 }
 
