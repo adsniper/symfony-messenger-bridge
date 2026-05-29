@@ -215,6 +215,10 @@ class HandlerMap implements Serializable
 
 	private function wrapCallable(CallableObject $handler): callable
 	{
+		if (is_array($handler)) {
+			$handler = new ArrayCallable($handler[0], $handler[1] ?? "__invoke");
+		}
+
 		return new LazyCaller(
 			$this->container,
 			$handler
