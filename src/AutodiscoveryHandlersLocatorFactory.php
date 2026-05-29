@@ -161,7 +161,7 @@ final class AutodiscoveryHandlersLocatorFactory implements Serializable
 
 class HandlerMap implements Serializable
 {
-	/** @var array<class-string, callable[]> */
+	/** @var array<class-string, CallableObject[]> */
 	private array $handlers = [];
 
 	/** @var array<class-string,> */
@@ -175,6 +175,9 @@ class HandlerMap implements Serializable
 		return $this;
 	}
 
+	/**
+	 * @param class-string $message
+	 */
 	public function addHandler(string $message, callable|array $handler, ?string $bus): self
 	{
 		if (!isset($this->handlers[$message])) {
@@ -210,27 +213,12 @@ class HandlerMap implements Serializable
 		return $resolved;
 	}
 
-	private function wrapCallable(CallableObject|callable|array $handler): callable
+	private function wrapCallable(CallableObject $handler): callable
 	{
-		if ($handler instanceof CallableObject) {
-			$handler = $handler->toCallable($this->container);
-		}
-
-		if (is_array($handler)) {
-			assert(count($handler) === 2);
-
-			if (is_object($handler[0])) {
-				$handler[0] = get_class($handler[0]);
-			}
-
-			return new LazyCaller(
-				$this->container,
-				$handler[0],
-				$handler[1]
-			);
-		}
-
-		throw new Exception("not implemented");
+		return new LazyCaller(
+			$this->container,
+			$handler
+		);
 	}
 
 	public function getSenders(): array
@@ -293,15 +281,14 @@ class LazyCaller
 {
 	public function __construct(
 		private ContainerInterface $container,
-		private string $class,
-		private string $method = "__invoke"
+		private CallableObject $handler
 	) {
 	}
 
 	public function __invoke(mixed... $args)
 	{
 		call_user_func_array(
-			[$this->container->get($this->class), $this->method],
+			$this->handler->toCallable($this->container),
 			$args
 		);
 	}
