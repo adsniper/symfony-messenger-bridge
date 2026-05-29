@@ -213,7 +213,7 @@ class HandlerMap implements Serializable
 		return $resolved;
 	}
 
-	private function wrapCallable(CallableObject $handler): callable
+	private function wrapCallable(CallableObject|array|callable $handler): callable
 	{
 		if (is_array($handler)) {
 			$handler = new ArrayCallable($handler[0], $handler[1] ?? "__invoke");
