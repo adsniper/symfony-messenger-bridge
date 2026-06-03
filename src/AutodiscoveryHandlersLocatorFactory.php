@@ -291,7 +291,7 @@ class LazyCaller
 
 	public function __invoke(mixed... $args)
 	{
-		call_user_func_array(
+		return call_user_func_array(
 			$this->handler->toCallable($this->container),
 			$args
 		);
