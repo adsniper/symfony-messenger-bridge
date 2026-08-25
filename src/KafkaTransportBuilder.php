@@ -45,7 +45,7 @@ class KafkaTransportBuilder
 		return $this;
 	}
 
-	public function build(): TransportInterface
+	public function build(): KafkaTransport
 	{
 		if ($this->config === null) {
 			throw new LogicException("No transport config was given");
