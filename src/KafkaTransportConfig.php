@@ -20,4 +20,21 @@ readonly class KafkaTransportConfig
 		public ?Closure $formatConsumerInstance = null
 	) {
 	}
+
+	/**
+	 * @internal
+	 * @param array<string, mixed> $props
+	 */
+	public function with(array $props): static
+	{
+		$copy = clone $this;
+
+		foreach ($props as $name => $value) {
+			if (!property_exists($copy, $name)) continue;
+
+			$copy->$name = $value;
+		}
+
+		return $copy;
+	}
 }
