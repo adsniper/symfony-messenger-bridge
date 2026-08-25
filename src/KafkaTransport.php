@@ -278,9 +278,7 @@ final class KafkaTransport implements TransportInterface, KeepaliveReceiverInter
 	public function withTopic(string $topic): static
 	{
 		$copy = clone $this;
-		$copy->config = $copy->config->with([
-			"topic" => $topic
-		]);
+		$copy->config = $this->config->withTopic($topic);
 
 		return $copy;
 	}

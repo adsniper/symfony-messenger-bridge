@@ -21,20 +21,17 @@ readonly class KafkaTransportConfig
 	) {
 	}
 
-	/**
-	 * @internal
-	 * @param array<string, mixed> $props
-	 */
-	public function with(array $props): static
+	public function withTopic(string $topic): static
 	{
-		$copy = clone $this;
-
-		foreach ($props as $name => $value) {
-			if (!property_exists($copy, $name)) continue;
-
-			$copy->$name = $value;
-		}
-
-		return $copy;
+		return new self(
+			$this->host,
+			$topic,
+			$this->group,
+			$this->consumerInstancePrefix,
+			$this->autoOffsetReset,
+			$this->autoCommit,
+			$this->messageKeyPrefix,
+			$this->formatConsumerInstance
+		);
 	}
 }
