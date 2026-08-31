@@ -274,20 +274,4 @@ final class KafkaTransport implements TransportInterface, KeepaliveReceiverInter
 		$this->consumerInstance = $inst;
 		return $inst;
 	}
-
-	public function withTopic(string $topic): static
-	{
-		$copy = clone $this;
-		$copy->config = $this->config->withTopic($topic);
-
-		return $copy;
-	}
-
-	public function withSerializer(SerializerInterface $serializer): static
-	{
-		$copy = clone $this;
-		$copy->serializer = $serializer;
-
-		return $copy;
-	}
 }
