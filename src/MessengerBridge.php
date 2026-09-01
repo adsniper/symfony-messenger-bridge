@@ -4,10 +4,14 @@ namespace Adsniper\SymfonyMessengerBridge;
 
 use HaydenPierce\ClassFinder\ClassFinder;
 use LogicException;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Command\ConsumeMessagesCommand;
+use Symfony\Component\Messenger\Command\StopWorkersCommand;
+use Symfony\Component\Messenger\EventListener\StopWorkerOnRestartSignalListener;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Middleware\AddBusNameStampMiddleware;
@@ -60,6 +64,9 @@ class MessengerBridge
 		return new MessageBus($middlewares);
 	}
 
+	/**
+	 * @deprecated use createConsoleCommandsForSignleBus instead
+	 */
 	public static function createConsumeMessagesCommandForSingleBus(MessageBusInterface $messageBus): ConsumeMessagesCommand
 	{
 		$receivers = [];
@@ -92,6 +99,59 @@ class MessengerBridge
 		);
 
 		return $command;
+	}
+
+	/**
+	 * @return array{ConsumeMessagesCommand, StopWorkersCommand}
+	 */
+	public static function createConsoleCommandsForSingleBus(
+		MessageBusInterface $messageBus,
+		?CacheItemPoolInterface $cache = null,
+		?LoggerInterface $logger = null
+	): array
+	{
+		$commands = $receivers = [];
+
+		if (self::$asyncTransport !== null) {
+			$receivers["async"] = self::$asyncTransport;
+		}
+
+		$receivers = new ArrayContainer($receivers);
+		$busContainer = new class($messageBus) implements ContainerInterface {
+			public function __construct(
+				private MessageBusInterface $messageBus
+			) {
+			}
+
+			public function has(string $id): bool
+			{
+				return true;
+			}
+
+			public function get(string $id)
+			{
+				return $this->messageBus;
+			}
+		};
+
+		$eventDispatcher = new EventDispatcher();
+
+		if ($cache !== null) {
+			$stopWorkerListener = new StopWorkerOnRestartSignalListener($cache, $logger);
+			$eventDispatcher->addSubscriber($stopWorkerListener);
+		}
+
+		$commands[] = new ConsumeMessagesCommand(
+			new RoutableMessageBus($busContainer),
+			$receivers,
+			$eventDispatcher
+		);
+
+		if ($cache !== null) {
+			$commands[] = new StopWorkersCommand($cache);
+		}
+
+		return $commands;
 	}
 
 	private static function containerNeeded(): void
